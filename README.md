@@ -203,5 +203,3 @@ Credits
 =======
 Craig Smith - craig@theialabs.com
 OpenGarages - opengarages.org (@OpenGarages)
-
-# uds-server

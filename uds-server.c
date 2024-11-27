@@ -1916,7 +1916,7 @@ void handle_read_mem_by_address(int can, struct canfd_frame frame)
         response_data[0] = frame.data[1] + 0x40;
         response_data[1] = frame.data[2];
         memcpy(&response_data[2], address_ptr, memory_size);
-        isotp_send(can, response_data, strlen(response_data));
+        isotp_send(can, response_data, 2 + memory_size);
       }
     }
   }
@@ -1935,7 +1935,11 @@ int flow_control(int can, struct canfd_frame frame)
 {
   if (frame.data[0] == 0x10)
   {
+    puts("flow_control");
     print_pkt(frame);
+    memset(&g_frame, 0, sizeof(struct canfd_frame));
+    memset(gBuffer, 0, sizeof(gBuffer));
+
     memcpy(gBuffer, &frame.data, 8);
 
     // size
@@ -1950,35 +1954,44 @@ int flow_control(int can, struct canfd_frame frame)
     frame.data[2] = 0x05;
     frame.len = 8;
     write(can, &frame, CAN_MTU);
+    return 0;
   }
   else
   {
-    puts("else");
+    puts("flow_control else");
     if (gBufLengthRemaining >= 7)
     {
       memcpy(&gBuffer[gBufCounter], &frame.data[1], 7);
       gBufCounter += 7;
       gBufLengthRemaining -= 7;
+      for (int i=0; i<g_frame.len; i++)
+        printf("%x ", g_frame.data[i]);
+      puts("");
     }
     else
     {
       memcpy(&gBuffer[gBufCounter], &frame.data[1], gBufLengthRemaining);
       gBufCounter += gBufLengthRemaining;
       gBufLengthRemaining = 0;
+      for (int i=0; i<g_frame.len; i++)
+        printf("%x ", g_frame.data[i]);
+      puts("");
     }
 
     if (gBufLengthRemaining == 0)
     {
       printf("gBufLengthRemaining: %d\n", gBufLengthRemaining);
       g_frame.can_id = 0x7E0;
+      printf("gBufCounter: %d\n", gBufCounter);
       g_frame.len = gBufCounter - 1;
       memcpy(g_frame.data, &gBuffer[1], g_frame.len);
+      for (int i=0; i<g_frame.len; i++)
+        printf("%x ", g_frame.data[i]);
+      puts("");
       print_pkt(g_frame);
       return 1;
     }
   }
-
-  return 0;
 }
 
 void handle_write_mem_by_address(int can, struct canfd_frame frame)
@@ -2062,7 +2075,7 @@ void handle_write_mem_by_address(int can, struct canfd_frame frame)
       }
     }
     else
-    { // read memory test
+    {
       if (0 && (address < 0x10000000) || ((0x10000000 + 4096) < address))
       {
         printf("curLvl=None, just test, nrc 0x31\n");
@@ -2070,9 +2083,18 @@ void handle_write_mem_by_address(int can, struct canfd_frame frame)
       }
       else
       {
-        memcpy(mapped_memory, &frame.data[data_position_index], memory_size);
+        print_pkt(frame);
+        printf("[!!!] index: %d\n", data_position_index);
+
+        for (int i=0; i<memory_size; i++) {
+          printf("%x ", frame.data[data_position_index+i]);
+        }
+
+        puts("");
+        memcpy(address_ptr, &frame.data[data_position_index], memory_size);
         frame.data[1] += 0x40;
-        isotp_send(can, &frame.data[1], frame.data[0] - memory_size - address_bytes_size - memory_bytes_size);
+        isotp_send(can, &frame.data[1], 
+          frame.data[0] - memory_bytes_size - address_bytes_size - memory_size);
       }
     }
   }
@@ -2349,6 +2371,7 @@ void handle_pkt(int can, struct canfd_frame frame)
       return;
     if (frame.data[0] > frame.len)
       return;
+
     switch (frame.data[1])
     {
     case OBD_MODE_SHOW_CURRENT_DATA:
@@ -2394,6 +2417,7 @@ void handle_pkt(int can, struct canfd_frame frame)
       break;
     case UDS_SID_WRITE_MEM_BY_ADDRESS:
       handle_write_mem_by_address(can, frame);
+      break;
     default:
       // if(verbose) plog("Unhandled mode/sid: %02X\n", frame.data[1]);
       if (verbose)
